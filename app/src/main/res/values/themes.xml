@@ -1,0 +1,10 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.GymTimer" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/accent_green</item>
+        <item name="colorPrimaryVariant">@color/accent_green_dark</item>
+        <item name="colorOnPrimary">@color/black_bg</item>
+        <item name="android:statusBarColor">@color/black_bg</item>
+        <item name="android:navigationBarColor">@color/black_bg</item>
+        <item name="android:windowBackground">@color/black_bg</item>
+    </style>
+</resources>
