@@ -1,5 +1,6 @@
 package com.gymtimer.app
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -13,6 +14,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 
@@ -27,6 +29,7 @@ class TimerService : Service() {
 
     private lateinit var vibrationHelper: VibrationHelper
     private lateinit var floatingWidgetManager: FloatingWidgetManager
+    private var wakeLock: PowerManager.WakeLock? = null
 
     var totalSeconds: Long = 60
         private set
@@ -72,8 +75,35 @@ class TimerService : Service() {
             onPlayPauseClicked = { togglePlayPause() },
             onStopClicked = { resetTimer() }
         )
+        initWakeLock()
         createNotificationChannel()
         promoteToForeground()
+    }
+
+    private fun initWakeLock() {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GymTimer::CountdownWakeLock")
+    }
+
+    @SuppressLint("WakelockTimeout")
+    private fun acquireWakeLock() {
+        try {
+            if (wakeLock?.isHeld == false) {
+                wakeLock?.acquire()
+            }
+        } catch (e: Exception) {
+            Log.e("TimerService", "Erro ao adquirir WakeLock", e)
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (e: Exception) {
+            Log.e("TimerService", "Erro ao liberar WakeLock", e)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -137,6 +167,7 @@ class TimerService : Service() {
         isRunning = true
         isFinished = false
         vibrationHelper.cancel()
+        acquireWakeLock()
         handler.removeCallbacks(timerRunnable)
         handler.post(timerRunnable)
         notifyStateChanged()
@@ -148,6 +179,7 @@ class TimerService : Service() {
             val now = System.currentTimeMillis()
             remainingSeconds = ((targetEndTime - now + 999L) / 1000L).coerceAtLeast(0)
             isRunning = false
+            releaseWakeLock()
             handler.removeCallbacks(timerRunnable)
             notifyStateChanged()
             handler.post { handleFloatingVisibility() }
@@ -164,6 +196,7 @@ class TimerService : Service() {
 
     fun resetTimer() {
         isRunning = false
+        releaseWakeLock()
         handler.removeCallbacks(timerRunnable)
         remainingSeconds = totalSeconds
         isFinished = false
@@ -175,8 +208,9 @@ class TimerService : Service() {
     private fun onFinished() {
         isRunning = false
         isFinished = true
+        releaseWakeLock()
         handler.removeCallbacks(timerRunnable)
-        // Vibração na intensidade máxima sem tocar som nenhum
+        // Vibração máxima configurada como ALARM (toca mesmo no Não Perturbe)
         vibrationHelper.vibrateMax()
         notifyStateChanged()
         handler.post { handleFloatingVisibility() }
@@ -190,8 +224,6 @@ class TimerService : Service() {
     }
 
     private fun handleFloatingVisibility() {
-        // Exibe a janela flutuante quando o app não estiver em primeiro plano
-        // e houver timer rodando ou ativo
         if (!isAppInForeground && (isRunning || (remainingSeconds > 0 && remainingSeconds < totalSeconds))) {
             floatingWidgetManager.show()
             floatingWidgetManager.updateTime(remainingSeconds)
@@ -211,6 +243,7 @@ class TimerService : Service() {
                 description = getString(R.string.channel_desc)
                 enableVibration(false)
                 setSound(null, null)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(channel)
@@ -262,6 +295,7 @@ class TimerService : Service() {
             .addAction(toggleActionIcon, toggleActionTitle, togglePendingIntent)
             .addAction(R.drawable.ic_stop, "Zerar", stopPendingIntent)
             .setOngoing(isRunning)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setSilent(true)
             .build()
     }
@@ -277,6 +311,7 @@ class TimerService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        releaseWakeLock()
         handler.removeCallbacks(timerRunnable)
         vibrationHelper.cancel()
         floatingWidgetManager.hide()
