@@ -13,7 +13,9 @@ import android.os.IBinder
 import android.provider.Settings
 import android.view.View
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.gymtimer.app.databinding.ActivityMainBinding
@@ -57,15 +59,29 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Ao pressionar "Voltar", minimiza em vez de destruir a Activity
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                moveTaskToBack(true)
+            }
+        })
+
         startAndBindService()
         setupListeners()
         requestNotificationPermissionIfNeeded()
+        checkOverlayPermission()
     }
 
     override fun onResume() {
         super.onResume()
         checkOverlayPermission()
         timerService?.isAppInForeground = true
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // Acionado no instante em que o usuário aperta Home ou troca de app
+        timerService?.isAppInForeground = false
     }
 
     override fun onStop() {
@@ -112,6 +128,11 @@ class MainActivity : AppCompatActivity() {
         // Botões de Ação
         binding.btnStartPause.setOnClickListener {
             val service = timerService ?: return@setOnClickListener
+
+            if (!Settings.canDrawOverlays(this)) {
+                showOverlayPermissionDialog()
+            }
+
             if (service.isRunning) {
                 service.pauseTimer()
             } else {
@@ -123,11 +144,10 @@ class MainActivity : AppCompatActivity() {
             timerService?.resetTimer()
         }
 
-        // Botão para testar/minimizar direto para a janela flutuante
+        // Botão para minimizar direto para a janela flutuante
         binding.btnMinimize.setOnClickListener {
             if (!Settings.canDrawOverlays(this)) {
-                requestOverlayPermission()
-                Toast.makeText(this, "Permita a sobreposição primeiro!", Toast.LENGTH_SHORT).show()
+                showOverlayPermissionDialog()
             } else {
                 moveTaskToBack(true)
             }
@@ -191,12 +211,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showOverlayPermissionDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Janela Flutuante Necessária")
+            .setMessage("Para exibir a contagem enquanto você usa outros apps (Spotify, WhatsApp), ative a permissão 'Sobrepor a outros apps'.")
+            .setPositiveButton("Configurar") { _, _ ->
+                requestOverlayPermission()
+            }
+            .setNegativeButton("Agora não", null)
+            .show()
+    }
+
     private fun requestOverlayPermission() {
-        val intent = Intent(
-            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-            Uri.parse("package:$packageName")
-        )
-        startActivity(intent)
+        try {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Não foi possível abrir as configurações de sobreposição.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun requestNotificationPermissionIfNeeded() {

@@ -35,7 +35,7 @@
         android:layout_width="34dp"
         android:layout_height="34dp"
         android:layout_marginEnd="8dp"
-        android:background="?attr/selectableItemBackgroundBorderless"
+        android:background="@android:color/transparent"
         android:contentDescription="Pausar ou Retomar"
         android:padding="5dp"
         android:src="@drawable/ic_pause" />
@@ -44,7 +44,7 @@
         android:id="@+id/btnFloatingStop"
         android:layout_width="34dp"
         android:layout_height="34dp"
-        android:background="?attr/selectableItemBackgroundBorderless"
+        android:background="@android:color/transparent"
         android:contentDescription="Parar Timer"
         android:padding="5dp"
         android:src="@drawable/ic_close" />

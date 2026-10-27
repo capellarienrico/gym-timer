@@ -7,11 +7,13 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import androidx.core.app.NotificationCompat
 
 class TimerService : Service() {
@@ -35,23 +37,28 @@ class TimerService : Service() {
     var isFinished: Boolean = false
         private set
 
+    private var targetEndTime: Long = 0L
+
     var isAppInForeground: Boolean = true
         set(value) {
             field = value
-            handleFloatingVisibility()
+            handler.post { handleFloatingVisibility() }
         }
 
     var onTickListener: ((remaining: Long, isRunning: Boolean, isFinished: Boolean) -> Unit)? = null
 
     private val timerRunnable = object : Runnable {
         override fun run() {
-            if (isRunning && remainingSeconds > 0) {
-                remainingSeconds--
-                notifyStateChanged()
-                if (remainingSeconds <= 0) {
+            if (isRunning) {
+                val now = System.currentTimeMillis()
+                val diff = targetEndTime - now
+                if (diff <= 0) {
+                    remainingSeconds = 0
                     onFinished()
                 } else {
-                    handler.postDelayed(this, 1000)
+                    remainingSeconds = (diff + 999L) / 1000L
+                    notifyStateChanged()
+                    handler.postDelayed(this, 500L)
                 }
             }
         }
@@ -66,10 +73,38 @@ class TimerService : Service() {
             onStopClicked = { resetTimer() }
         )
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        promoteToForeground()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        promoteToForeground()
+
+        when (intent?.action) {
+            ACTION_TOGGLE -> togglePlayPause()
+            ACTION_STOP -> resetTimer()
+        }
+
+        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
+
+    private fun promoteToForeground() {
+        try {
+            val notification = buildNotification()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.e("TimerService", "Erro ao iniciar foreground service", e)
+        }
+    }
 
     fun setTime(seconds: Long) {
         pauseTimer()
@@ -81,7 +116,13 @@ class TimerService : Service() {
     }
 
     fun addSeconds(seconds: Long) {
-        remainingSeconds = (remainingSeconds + seconds).coerceAtLeast(1)
+        if (isRunning) {
+            targetEndTime += (seconds * 1000L)
+            val now = System.currentTimeMillis()
+            remainingSeconds = ((targetEndTime - now + 999L) / 1000L).coerceAtLeast(1)
+        } else {
+            remainingSeconds = (remainingSeconds + seconds).coerceAtLeast(1)
+        }
         if (remainingSeconds > totalSeconds) {
             totalSeconds = remainingSeconds
         }
@@ -92,19 +133,25 @@ class TimerService : Service() {
         if (remainingSeconds <= 0) {
             remainingSeconds = totalSeconds
         }
+        targetEndTime = System.currentTimeMillis() + remainingSeconds * 1000L
         isRunning = true
         isFinished = false
         vibrationHelper.cancel()
         handler.removeCallbacks(timerRunnable)
-        handler.postDelayed(timerRunnable, 1000)
+        handler.post(timerRunnable)
         notifyStateChanged()
-        handleFloatingVisibility()
+        handler.post { handleFloatingVisibility() }
     }
 
     fun pauseTimer() {
-        isRunning = false
-        handler.removeCallbacks(timerRunnable)
-        notifyStateChanged()
+        if (isRunning) {
+            val now = System.currentTimeMillis()
+            remainingSeconds = ((targetEndTime - now + 999L) / 1000L).coerceAtLeast(0)
+            isRunning = false
+            handler.removeCallbacks(timerRunnable)
+            notifyStateChanged()
+            handler.post { handleFloatingVisibility() }
+        }
     }
 
     fun togglePlayPause() {
@@ -116,12 +163,13 @@ class TimerService : Service() {
     }
 
     fun resetTimer() {
-        pauseTimer()
+        isRunning = false
+        handler.removeCallbacks(timerRunnable)
         remainingSeconds = totalSeconds
         isFinished = false
         vibrationHelper.cancel()
         notifyStateChanged()
-        floatingWidgetManager.hide()
+        handler.post { floatingWidgetManager.hide() }
     }
 
     private fun onFinished() {
@@ -131,6 +179,7 @@ class TimerService : Service() {
         // Vibração na intensidade máxima sem tocar som nenhum
         vibrationHelper.vibrateMax()
         notifyStateChanged()
+        handler.post { handleFloatingVisibility() }
     }
 
     private fun notifyStateChanged() {
@@ -141,19 +190,15 @@ class TimerService : Service() {
     }
 
     private fun handleFloatingVisibility() {
-        if (!isAppInForeground && (isRunning || remainingSeconds > 0)) {
+        // Exibe a janela flutuante quando o app não estiver em primeiro plano
+        // e houver timer rodando ou ativo
+        if (!isAppInForeground && (isRunning || (remainingSeconds > 0 && remainingSeconds < totalSeconds))) {
             floatingWidgetManager.show()
             floatingWidgetManager.updateTime(remainingSeconds)
             floatingWidgetManager.updateState(isRunning)
         } else {
             floatingWidgetManager.hide()
         }
-    }
-
-    fun forceShowFloating() {
-        floatingWidgetManager.show()
-        floatingWidgetManager.updateTime(remainingSeconds)
-        floatingWidgetManager.updateState(isRunning)
     }
 
     private fun createNotificationChannel() {
@@ -173,11 +218,27 @@ class TimerService : Service() {
     }
 
     private fun buildNotification(): Notification {
-        val intent = Intent(this, MainActivity::class.java).apply {
+        val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
+        val openPendingIntent = PendingIntent.getActivity(
+            this, 0, openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val toggleIntent = Intent(this, TimerService::class.java).apply {
+            action = ACTION_TOGGLE
+        }
+        val togglePendingIntent = PendingIntent.getService(
+            this, 1, toggleIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val stopIntent = Intent(this, TimerService::class.java).apply {
+            action = ACTION_STOP
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this, 2, stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -190,11 +251,16 @@ class TimerService : Service() {
             else -> "Pausado em $timeStr"
         }
 
+        val toggleActionTitle = if (isRunning) "Pausar" else "Retomar"
+        val toggleActionIcon = if (isRunning) R.drawable.ic_pause else R.drawable.ic_play
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title))
             .setContentText(statusText)
             .setSmallIcon(R.drawable.ic_timer)
-            .setContentIntent(pendingIntent)
+            .setContentIntent(openPendingIntent)
+            .addAction(toggleActionIcon, toggleActionTitle, togglePendingIntent)
+            .addAction(R.drawable.ic_stop, "Zerar", stopPendingIntent)
             .setOngoing(isRunning)
             .setSilent(true)
             .build()
@@ -202,7 +268,11 @@ class TimerService : Service() {
 
     private fun updateNotification() {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, buildNotification())
+        try {
+            manager.notify(NOTIFICATION_ID, buildNotification())
+        } catch (e: Exception) {
+            Log.e("TimerService", "Erro ao atualizar notificação", e)
+        }
     }
 
     override fun onDestroy() {
@@ -215,5 +285,7 @@ class TimerService : Service() {
     companion object {
         const val CHANNEL_ID = "gym_timer_foreground_channel"
         const val NOTIFICATION_ID = 1001
+        const val ACTION_TOGGLE = "com.gymtimer.app.ACTION_TOGGLE"
+        const val ACTION_STOP = "com.gymtimer.app.ACTION_STOP"
     }
 }
