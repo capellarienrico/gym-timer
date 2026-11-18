@@ -1,10 +1,10 @@
-# Gym Timer ⏱️ (Timer de Academia com Janela Flutuante)
+# Gym Timer (Timer de Academia com Janela Flutuante)
 
 Aplicativo Android nativo (Kotlin) desenvolvido para descanso entre séries na academia.
 
 ---
 
-## 🚀 Principais Recursos
+## Principais Recursos
 
 1. **Tempos Predefinidos Rápidos**:
    - `45s`
@@ -14,7 +14,7 @@ Aplicativo Android nativo (Kotlin) desenvolvido para descanso entre séries na a
 
 2. **Vibração na Intensidade Máxima (Sem Som)**:
    - Utiliza a API `VibrationEffect` com amplitude máxima (`255`) em rajadas fortes para ser sentido claramente no bolso.
-   - **Zero bipes, músicas ou toques sonoros** — não interfere na sua música (Spotify, Deezer, YouTube Music).
+   - **Zero bipes, músicas ou toques sonoros**: não interfere na sua música (Spotify, Deezer, YouTube Music).
 
 3. **Janela Flutuante Arrastável (Overlay)**:
    - Ao minimizar o app ou trocar de tela, uma janelinha compacta aparece sobre os outros aplicativos.
@@ -27,7 +27,7 @@ Aplicativo Android nativo (Kotlin) desenvolvido para descanso entre séries na a
 
 ---
 
-## 📦 Como Gerar o Arquivo `.apk`
+## Como Gerar o Arquivo `.apk`
 
 Você tem **3 opções simples** para compilar:
 
@@ -36,7 +36,7 @@ Este projeto já vem com o arquivo `.github/workflows/build-apk.yml` pronto:
 1. Crie um repositório no seu GitHub (pode ser privado).
 2. Envie esta pasta para lá:
    ```bash
-   git remote add origin https://github.com/SEU_USUARIO/gym-timer.git
+   git remote add origin https://github.com/capellarienrico/gym-timer.git
    git branch -M main
    git push -u origin main
    ```
@@ -66,7 +66,7 @@ O APK gerado ficará em:
 
 ---
 
-## 📱 Permissões do Android
+## Permissões do Android
 Ao abrir o app pela primeira vez:
 - **Sobrepor a outros aplicativos**: O app mostrará um aviso destacado com um botão direto para permitir. Essa permissão é necessária para que a janela flutuante funcione sobre o Spotify, WhatsApp ou Instagram.
 - **Notificações**: Necessária no Android 13+ para o timer continuar rodando em segundo plano.
